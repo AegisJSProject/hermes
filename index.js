@@ -1,3 +1,11 @@
-import { MESSAGE } from 'npm-template/consts.js';
-console.log(import.meta);
-console.info(MESSAGE);
+import { registerServiceWorker } from './registry.js';
+
+const policy = trustedTypes.createPolicy('local#script-url', {
+	createScriptURL(input) {
+		if (input.startsWith(location.origin)) {
+			return input;
+		}
+	}
+});
+
+registerServiceWorker(policy.createScriptURL(new URL('/sw.config.js', document.baseURI)), { type: 'module', policy });

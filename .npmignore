@@ -8,6 +8,7 @@ node_modules/
 .gitignore
 .nvmrc
 index.html
+index.js
 importmap.json
 importmap.yaml
 *.config.js

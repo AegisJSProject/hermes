@@ -1,13 +1,14 @@
 import { imports } from '@shgysk8zer0/importmap';
-import { checkCacheItem, setCacheItem } from '@aegisjsproject/http-utils/cache.js';
-import { addTrustedTypePolicy, addScriptSrc, useDefaultCSP } from '@aegisjsproject/http-utils/csp.js';
+import { addTrustedTypePolicy, addScriptSrc, useDefaultCSP, addWorkerSrc } from '@aegisjsproject/http-utils/csp.js';
 
 addScriptSrc(
 	'https://unpkg.com/@aegisjsproject/',
 	'https://unpkg.com/@shgysk8zer0/',
 );
 
-addTrustedTypePolicy('aegis-sanitizer#html');
+addWorkerSrc('\'self\'');
+
+addTrustedTypePolicy('aegis-sanitizer#html', 'local#script-url');
 
 export default {
 	routes: {
@@ -17,7 +18,6 @@ export default {
 	open: true,
 	requestPreprocessors: [
 		'@aegisjsproject/http-utils/request-id.js',
-		checkCacheItem,
 	],
 	responsePostprocessors: [
 		'@aegisjsproject/http-utils/compression.js',
@@ -28,6 +28,5 @@ export default {
 				response.headers.append('Link', `<${imports['@shgysk8zer0/polyfills']}>; rel="preload"; as="script"; fetchpriority="high"; crossorigin="anonymous"; referrerpolicy="no-referrer"`);
 			}
 		},
-		setCacheItem,
 	],
 };

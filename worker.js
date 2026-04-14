@@ -250,7 +250,7 @@ export class HermesWorker extends EventTarget {
 	 * @returns {Promise<Cache>}
 	 */
 	async #openCache(name, version) {
-		const cacheName = `${name.trim().replaceAll(/[^@A-z0-9]/g, '_')}@${version}`;
+		const cacheName = `${name.trim().replaceAll(/[^@A-Za-z0-9]/g, '_')}@${version}`;
 
 		if (this.#caches.has(cacheName)) {
 			return await this.#caches.get(cacheName);

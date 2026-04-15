@@ -11,12 +11,12 @@ const sw = globalThis;
 const handleError = console.error;
 
 /**
- * @typedef {object} CacheConfig
+ * @typedef {object} RouteConfig
  * @property {string} name The name component of ":name-:version"
  * @property {string|number} version The version component of ":name-:version"
- * @property {URLPattern} pattern URL pattern to control which URLs this is responsible for
+ * @property {URLPattern|RegExp} pattern URL pattern to control which URLs this is responsible for
  * @property {CachingStrategy} [strategy="network-first"] The caching pattern to employ.
- * @property {string|URL[]} [prefetch] URLs to preload to cache
+ * @property {string[]|URL[]} [prefetch] URLs to preload to cache
  * @property {boolean} [ignoreSearch=false] Specifies whether to ignore the query string in the URL
  * @property {boolean} [ignoreMethod=false] Prevents matching operations from validating the `Request` http method
  * @property {boolean} [ignoreVary=false] Tells the matching operation not to perform `VARY` header matching
@@ -25,27 +25,24 @@ const handleError = console.error;
 
 export class HermesWorker extends EventTarget {
 	/**
-	 * @type {CacheConfig[]}
+	 * @type {RouteConfig[]}
 	 */
-	#configs = [];
+	#routes = [];
 	#caches = new Map();
 
 	/**
 	 *
-	 * @param {CacheConfig[]} configs
+	 * @param {RouteConfig[]} routes
+	 * @param {string[]} [extraEvents=[]]
 	 */
-	constructor(configs) {
+	constructor(routes, extraEvents = []) {
 		super();
-		this.#configs = configs;
+		this.#routes = this.#normalizeRoutes(routes);
 
 		sw.addEventListener('install', this);
 		sw.addEventListener('activate', this);
 		sw.addEventListener('fetch', this);
-		sw.addEventListener('message', this);
-		sw.addEventListener('notificationclick', this);
-		sw.addEventListener('periodicsync', this);
-		sw.addEventListener('sync', this);
-		sw.addEventListener('push', this);
+		extraEvents.forEach(event => sw.addEventListener(event, this));
 	}
 
 	/**
@@ -85,12 +82,12 @@ export class HermesWorker extends EventTarget {
 				ignoreSearch = false,
 				ignoreVary = false,
 				fallback,
-			} = this.#configs.find(({ pattern }) => pattern.test(event.request.url)) ?? {};
+			} = this.#routes.find(({ pattern }) => pattern.test(event.request.url)) ?? {};
 
-			if (typeof name !== 'undefined' && typeof version !== 'undefined' && strategy !== 'network-only') {
+			if (typeof name !== 'undefined' && strategy !== 'network-only') {
 				const { promise, resolve, reject } = Promise.withResolvers();
 
-
+				// Ensures a `Response` is always returned, even if `Response.error()`
 				event.respondWith(promise.then(resp => resp instanceof Response ? resp : Response.error()).catch(async err => {
 					handleError(err);
 					const cache = await this.#openCache(name, version);
@@ -194,7 +191,7 @@ export class HermesWorker extends EventTarget {
 		event.waitUntil(promise);
 
 		try {
-			await Promise.all(this.#configs.map(async ({ name, version, fallback, prefetch = []}) => {
+			await Promise.all(this.#routes.map(async ({ name, version, fallback, prefetch = []}) => {
 				const cache = await this.#openCache(name, version);
 
 				if (typeof fallback === 'string' || fallback instanceof URL) {
@@ -220,20 +217,22 @@ export class HermesWorker extends EventTarget {
 		const { promise, resolve, reject } = Promise.withResolvers();
 		event.waitUntil(promise);
 
+
 		try {
 			const expectedCaches = new Set(
-				this.#configs
-					.filter(config => typeof config.name !== 'undefined' && typeof config.version !== 'undefined')
-					.map(config => `${config.name}-${config.version}`)
+				this.#routes
+					.filter(config => typeof config.name !== 'undefined')
+					.map(config => this.#getCacheName(config.name, config.version))
 			);
 
-			const existingCaches = await sw.caches.keys();
-
-			await Promise.all(
-				Array.from(
-					existingCaches.filter(cache => ! expectedCaches.has(cache)),
-					cache => sw.caches.delete(cache),
-				)
+			await caches.keys().then(names =>
+				Promise.all(
+					names.map(name => {
+						if (! expectedCaches.has(name)) {
+							return caches.delete(name);
+						}
+					}),
+				),
 			);
 
 			await sw.clients.claim();
@@ -245,12 +244,43 @@ export class HermesWorker extends EventTarget {
 
 	/**
 	 *
+	 * @param {RouteConfig|RouteConfig[]} routes
+	 * @returns {RouteConfig[]}
+	 */
+	#normalizeRoutes(routes) {
+		if (! Array.isArray(routes)) {
+			return this.#normalizeRoutes([routes]);
+		} else {
+			return routes.map(({
+				name, version = 'v0.0.0', pattern, strategy = 'network-first', ignoreMethod = false,
+				ignoreSearch = false, ignoreVary = false, fallback,
+			}) => ({
+				name, version, pattern: typeof pattern === 'string' ? this.#stringToPattern(pattern) : pattern,
+				strategy, ignoreMethod, ignoreSearch, ignoreVary, fallback,
+			}));
+		}
+	}
+
+	#stringToPattern(str) {
+		if (URL.canParse(str)) {
+			return new URLPattern(str);
+		} else {
+			return new URLPattern({ baseURL: location.origin,  pathname: str });
+		}
+	}
+
+	#getCacheName(name, version = 'v0.0.0') {
+		return `${name.trim().replaceAll(/[^@A-Za-z0-9]/g, '_')}@${version}`;
+	}
+
+	/**
+	 *
 	 * @param {string} name
 	 * @param {string} version
 	 * @returns {Promise<Cache>}
 	 */
 	async #openCache(name, version) {
-		const cacheName = `${name.trim().replaceAll(/[^@A-Za-z0-9]/g, '_')}@${version}`;
+		const cacheName = this.#getCacheName(name, version);
 
 		if (this.#caches.has(cacheName)) {
 			return await this.#caches.get(cacheName);

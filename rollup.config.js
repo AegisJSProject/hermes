@@ -1,3 +1,4 @@
+import terser from '@rollup/plugin-terser';
 export default [{
 	input: 'hermes.js',
 	external: () => true,
@@ -10,11 +11,21 @@ export default [{
 	output: [{
 		file: 'registry.cjs',
 		format: 'cjs',
+	}, {
+		file: 'registry.min.js',
+		format: 'module',
+		plugins: [terser()],
+		sourcemap: true,
 	}],
 }, {
 	input: 'worker.js',
 	output: [{
 		file: 'worker.cjs',
 		format: 'cjs',
+	}, {
+		file: 'worker.min.js',
+		format: 'module',
+		plugins: [terser()],
+		sourcemap: true,
 	}],
 }];

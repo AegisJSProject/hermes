@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.2] - 2026-04-15
+
+### Added
+- Add support for `RegExp` & `string` in patterns
+- Add an optional array of other events to listen for
+- Add normalization of routes & names
+
 ## [v1.0.1] - 2026-04-14
 
 ### Added

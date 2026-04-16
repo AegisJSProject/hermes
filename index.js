@@ -1,4 +1,4 @@
-import { registerServiceWorker } from './registry.js';
+import { registerServiceWorker, postMessage } from './registry.js';
 
 const policy = trustedTypes.createPolicy('local#script-url', {
 	createScriptURL(input) {
@@ -9,3 +9,4 @@ const policy = trustedTypes.createPolicy('local#script-url', {
 });
 
 registerServiceWorker(policy.createScriptURL(new URL('/sw.config.js', document.baseURI)), { type: 'module', policy });
+postMessage('Hello, World!');

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.3] - 2026-04-16
+
+### Added
+- Add `postMessage()`
+
+### Fixed
+- Fix normalizing of routes (was missing `prefetch`)
+- Fix re-dispatching of events
+
 ## [v1.0.2] - 2026-04-15
 
 ### Added

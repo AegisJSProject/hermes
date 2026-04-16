@@ -22,3 +22,8 @@ export async function registerServiceWorker(scriptURL, {
 		return await navigator.serviceWorker.register(scriptURL, { scope, type, updateViaCache });
 	}
 }
+
+export async function postMessage(message, options) {
+	const reg = await navigator.serviceWorker.ready;
+	reg.active.postMessage(message, options);
+}

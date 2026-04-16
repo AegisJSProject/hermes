@@ -1,6 +1,6 @@
 {
   "name": "@aegisjsproject/hermes",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A template repo for npm packages",
   "keywords": [],
   "type": "module",

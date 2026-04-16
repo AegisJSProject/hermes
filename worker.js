@@ -13,7 +13,7 @@ const handleError = console.error;
 /**
  * @typedef {object} RouteConfig
  * @property {string} name The name component of ":name-:version"
- * @property {string|number} version The version component of ":name-:version"
+ * @property {string|number} [version="v0.0.0"] The version component of ":name-:version"
  * @property {URLPattern|RegExp} pattern URL pattern to control which URLs this is responsible for
  * @property {CachingStrategy} [strategy="network-first"] The caching pattern to employ.
  * @property {string[]|URL[]} [prefetch] URLs to preload to cache
@@ -64,7 +64,12 @@ export class HermesWorker extends EventTarget {
 				break;
 
 			default:
-				this.dispatchEvent(event);
+				this.dispatchEvent(new CustomEvent(event.type, {
+					detail: {
+						event,
+						routes: this.#routes,
+					}
+				}));
 		}
 	}
 
@@ -253,10 +258,10 @@ export class HermesWorker extends EventTarget {
 		} else {
 			return routes.map(({
 				name, version = 'v0.0.0', pattern, strategy = 'network-first', ignoreMethod = false,
-				ignoreSearch = false, ignoreVary = false, fallback,
+				ignoreSearch = false, ignoreVary = false, prefetch = [], fallback,
 			}) => ({
 				name, version, pattern: typeof pattern === 'string' ? this.#stringToPattern(pattern) : pattern,
-				strategy, ignoreMethod, ignoreSearch, ignoreVary, fallback,
+				strategy, ignoreMethod, ignoreSearch, ignoreVary, prefetch, fallback,
 			}));
 		}
 	}

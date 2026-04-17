@@ -78,7 +78,7 @@ export class HermesWorker extends EventTarget {
 	 * @param {FetchEvent} event
 	 */
 	async #fetchHandler(event) {
-		if (event.request.method === 'GET') {
+		if (event.request.method === 'GET' && (event.request.url.startsWith(location.origin) || event.request.mode === 'cors')) {
 			const {
 				name,
 				version,
@@ -101,6 +101,8 @@ export class HermesWorker extends EventTarget {
 						return cache.match(fallback)
 							.then(resp => resp instanceof Response ? resp : Response.error())
 							.catch(() => Response.error());
+					} else {
+						return Response.error();
 					}
 				}));
 
@@ -178,6 +180,9 @@ export class HermesWorker extends EventTarget {
 								}
 							}).catch(reject);
 							break;
+
+						default:
+							fetch(event.request).then(resolve).catch(() => resolve(Response.error()));
 					}
 
 				} catch(err) {

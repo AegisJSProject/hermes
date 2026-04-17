@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.5] - 2026-04-17
+
+### Fixed
+- Use `skipWaiting()` during install
+- Ensure `cache.put()` succeeds via `event.waitUntil(waiting.promise)` in fetch
+
 ## [v1.0.4] - 2026-04-17
 
 ### Fixed

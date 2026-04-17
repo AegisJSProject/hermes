@@ -8,5 +8,10 @@ const policy = trustedTypes.createPolicy('local#script-url', {
 	}
 });
 
-registerServiceWorker(policy.createScriptURL(new URL('/sw.config.js', document.baseURI)), { type: 'module', policy });
+const reg = await registerServiceWorker(
+	policy.createScriptURL(new URL('/sw.config.js', document.baseURI)),
+	{ type: 'module', policy, updateViaCache: 'none' }
+);
+
+reg.update();
 postMessage('Hello, World!');

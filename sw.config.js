@@ -8,7 +8,7 @@ const worker = new HermesWorker([
 		version: pkg.version,
 		strategy: 'network-first',
 		pattern: '/*',
-		prefetch: ['/', '/index.js', '/registry.js', '/favicon.svg'],
+		prefetch: ['/', '/index.js', '/registry.js', '/favicon.svg', '/package.json'],
 	},
 	{
 		name: 'unpkg',

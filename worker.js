@@ -91,6 +91,7 @@ export class HermesWorker extends EventTarget {
 
 			if (typeof name !== 'undefined' && strategy !== 'network-only') {
 				const { promise, resolve, reject } = Promise.withResolvers();
+				const waiting = Promise.withResolvers();
 
 				// Ensures a `Response` is always returned, even if `Response.error()`
 				event.respondWith(promise.then(resp => resp instanceof Response ? resp : Response.error()).catch(async err => {
@@ -106,6 +107,8 @@ export class HermesWorker extends EventTarget {
 					}
 				}));
 
+				event.waitUntil(waiting.promise);
+
 				/**
 				 * @type {Cache}
 				 */
@@ -114,6 +117,8 @@ export class HermesWorker extends EventTarget {
 				try {
 					switch(strategy) {
 						case 'cache-only':
+							waiting.resolve();
+
 							cache.match(event.request, { ignoreSearch, ignoreMethod, ignoreVary }).then(async cached => {
 								if (cached instanceof Response) {
 									resolve(cached);
@@ -127,34 +132,48 @@ export class HermesWorker extends EventTarget {
 							cache.match(event.request, { ignoreSearch, ignoreMethod, ignoreVary }).then(async cached => {
 								if (cached instanceof Response) {
 									resolve(cached);
+									waiting.resolve();
 								} else {
 									const resp = await fetch(event.request);
 
 									if (resp.ok) {
-										resolve(resp.clone());
-										event.waitUntil(cache.put(event.request, resp));
+										cache.put(event.request, resp.clone()).finally(waiting.resolve);
+										resolve(resp);
 									} else {
 										reject(new DOMException(`${event.request.url} [${resp.status}]`, 'NetworkError'));
+										waiting.reject();
 									}
 								}
-							}).catch(reject);
+							}).catch(err => {
+								reject(err);
+								waiting.reject();
+							});
 							break;
 
 						case 'network-first':
 							fetch(event.request).then(resp => {
 								if (resp.ok) {
-									resolve(resp.clone());
-									event.waitUntil(cache.put(event.request, resp));
+									cache.put(event.request, resp.clone()).finally(waiting.resolve);
+									resolve(resp);
 								} else {
 									cache.match(event.request, { ignoreSearch, ignoreMethod, ignoreVary })
-										.then(cached => resolve(cached instanceof Response ? cached : resp)).catch(reject);
+										.then(cached => resolve(cached instanceof Response ? cached : resp))
+										.catch(reject)
+										.finally(waiting.resolve);
 								}
-							}).catch(reject);
+							}).catch(() => {
+								cache.match(event.request, { ignoreSearch, ignoreMethod, ignoreVary })
+									.then(cached => resolve(cached instanceof Response ? cached : Response.error()))
+									.catch(reject)
+									.finally(waiting.resolve);
+							});
 
 							break;
 
 						case 'network-only':
 							// This should never be reached, but listing to exhaust all options
+							waiting.resolve();
+							fetch(event.request).then(resolve, reject);
 							break;
 
 						case 'stale-while-revalidate':
@@ -162,31 +181,39 @@ export class HermesWorker extends EventTarget {
 								if (cached instanceof Response) {
 									resolve(cached);
 
-									event.waitUntil(fetch(event.request).then(async resp => {
+									fetch(event.request).then(async resp => {
 										if (resp.ok) {
-											await cache.put(event.request, resp);
+											cache.put(event.request, resp).finally(waiting.resolve);
+										} else {
+											waiting.resolve();
 										}
-									}));
+									}).catch(() => waiting.resolve());
 
 								} else {
 									const resp = await fetch(event.request).catch(() => Response.error());
 
 									if (resp.ok) {
-										resolve(resp.clone());
-										event.waitUntil(cache.put(event.request, resp));
+										cache.put(event.request, resp.clone()).finally(waiting.resolve);
+										resolve(resp);
 									} else {
 										resolve(resp);
+										waiting.resolve();
 									}
 								}
-							}).catch(reject);
+							}).catch(err => {
+								reject(err);
+								waiting.reject();
+							});
 							break;
 
 						default:
-							fetch(event.request).then(resolve).catch(() => resolve(Response.error()));
+							waiting.resolve();
+							fetch(event.request).then(resolve, reject);
 					}
 
 				} catch(err) {
 					reject(err);
+					waiting.reject();
 				}
 			}
 		}
@@ -201,6 +228,8 @@ export class HermesWorker extends EventTarget {
 		event.waitUntil(promise);
 
 		try {
+			await sw.skipWaiting();
+
 			await Promise.all(this.#routes.map(async ({ name, version, fallback, prefetch = []}) => {
 				const cache = await this.#openCache(name, version);
 

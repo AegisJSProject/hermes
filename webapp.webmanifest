@@ -1,0 +1,11 @@
+{
+	"name": "@aegisjsproject/hermes",
+	"short_name": "Hermes",
+	"version": "v1.0.3",
+	"description": "Simple and configurable service worker library",
+	"categories": ["utilities"],
+	"display": "standalone",
+	"start_url": "/",
+	"background_color": "#242424",
+	"theme_color": "#1a5fb4"
+}

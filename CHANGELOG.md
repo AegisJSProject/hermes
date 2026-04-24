@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.6] - 2026-04-24
+
+### Added
+- Add `autoRegisterServiceWorker()` to register from `document.documentElement.dataset`
+
 ## [v1.0.5] - 2026-04-17
 
 ### Fixed

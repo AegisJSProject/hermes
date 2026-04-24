@@ -23,6 +23,19 @@ export async function registerServiceWorker(scriptURL, {
 	}
 }
 
+/**
+ *
+ * @param {TrustedTypePolicy}  [policy]
+ * @returns {Promise<ServiceWorkerRegistration|null}
+ */
+export async function autoRegisterServiceWorker(policy = globalThis.trustedTypes?.defaultPolicy) {
+	if ('serviceWorker' in document.documentElement.dataset) {
+		return await registerServiceWorker(document.documentElement.dataset.serviceWorker, { policy });
+	} else {
+		return null;
+	}
+}
+
 export async function postMessage(message, options) {
 	const reg = await navigator.serviceWorker.ready;
 	reg.active.postMessage(message, options);

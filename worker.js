@@ -7,21 +7,28 @@
 /** @type {ServiceWorkerGlobalScope} */
 const sw = globalThis;
 
-// const handleError = () => {};
-const handleError = console.error;
+const handleError = globalThis.reportError ?? console.error;
 
 /**
  * @typedef {object} RouteConfig
  * @property {string} name The name component of ":name-:version"
  * @property {string|number} [version="v0.0.0"] The version component of ":name-:version"
- * @property {URLPattern|RegExp} pattern URL pattern to control which URLs this is responsible for
+ * @property {URLPattern|RegExp|{test(string: url) => boolean}} [pattern] URL pattern to control which URLs this is responsible for
+ * @property {RequestDestination|RequestDestination[]|undefined} [destination] Matches against `request.destination`
  * @property {CachingStrategy} [strategy="network-first"] The caching pattern to employ.
  * @property {string[]|URL[]} [prefetch] URLs to preload to cache
  * @property {boolean} [ignoreSearch=false] Specifies whether to ignore the query string in the URL
  * @property {boolean} [ignoreMethod=false] Prevents matching operations from validating the `Request` http method
  * @property {boolean} [ignoreVary=false] Tells the matching operation not to perform `VARY` header matching
- * @property {string|URL} [fallback] Fallback document for offline document requests
+ * @property {string|URL|Response} [fallback] Fallback document for offline document requests
  */
+
+/** @type {RouteConfig} */
+const NULL_ROUTE = {
+	name: 'unmatched',
+	version: 'v0.0.0',
+	strategy: 'network-only',
+};
 
 export class HermesWorker extends EventTarget {
 	/**
@@ -43,6 +50,11 @@ export class HermesWorker extends EventTarget {
 		sw.addEventListener('activate', this);
 		sw.addEventListener('fetch', this);
 		extraEvents.forEach(event => sw.addEventListener(event, this));
+	}
+
+	[Symbol.dispose]() {
+		this.#routes = [];
+		this.#caches.clear();
 	}
 
 	/**
@@ -87,24 +99,20 @@ export class HermesWorker extends EventTarget {
 				ignoreSearch = false,
 				ignoreVary = false,
 				fallback,
-			} = this.#routes.find(({ pattern }) => pattern.test(event.request.url)) ?? {};
+			} = this.#matchRequest(event.request);
 
 			if (typeof name !== 'undefined' && strategy !== 'network-only') {
 				const { promise, resolve, reject } = Promise.withResolvers();
 				const waiting = Promise.withResolvers();
 
 				// Ensures a `Response` is always returned, even if `Response.error()`
-				event.respondWith(promise.then(resp => resp instanceof Response ? resp : Response.error()).catch(async err => {
+				event.respondWith(promise.then(resp => resp instanceof Response ? resp : this.#getFallback({ name, version, fallback })).catch(async err => {
 					handleError(err);
 					const cache = await this.#openCache(name, version);
 
-					if (event.request.mode === 'navigate' && (typeof fallback === 'string' || fallback instanceof URL)) {
-						return cache.match(fallback)
-							.then(resp => resp instanceof Response ? resp : Response.error())
-							.catch(() => Response.error());
-					} else {
-						return Response.error();
-					}
+					return cache.match(fallback)
+						.then(resp => resp instanceof Response ? resp : this.#getFallback({ name, version, fallback }))
+						.catch(() => this.#getFallback({ name, version, fallback }));
 				}));
 
 				event.waitUntil(waiting.promise);
@@ -120,11 +128,7 @@ export class HermesWorker extends EventTarget {
 							waiting.resolve();
 
 							cache.match(event.request, { ignoreSearch, ignoreMethod, ignoreVary }).then(async cached => {
-								if (cached instanceof Response) {
-									resolve(cached);
-								} else {
-									reject(new DOMException(`${event.request.url} [404]`));
-								}
+								resolve(cached instanceof Response ? cached : this.#getFallback({ name, version, fallback }));
 							}).catch(reject);
 							break;
 
@@ -140,7 +144,7 @@ export class HermesWorker extends EventTarget {
 										cache.put(event.request, resp.clone()).finally(waiting.resolve);
 										resolve(resp);
 									} else {
-										reject(new DOMException(`${event.request.url} [${resp.status}]`, 'NetworkError'));
+										resolve(await this.#getFallback({ name, version, fallback }));
 										waiting.reject();
 									}
 								}
@@ -157,13 +161,13 @@ export class HermesWorker extends EventTarget {
 									resolve(resp);
 								} else {
 									cache.match(event.request, { ignoreSearch, ignoreMethod, ignoreVary })
-										.then(cached => resolve(cached instanceof Response ? cached : resp))
+										.then(cached => resolve(cached instanceof Response ? cached : this.#getFallback({ name, version, fallback })))
 										.catch(reject)
 										.finally(waiting.resolve);
 								}
 							}).catch(() => {
 								cache.match(event.request, { ignoreSearch, ignoreMethod, ignoreVary })
-									.then(cached => resolve(cached instanceof Response ? cached : Response.error()))
+									.then(cached => resolve(cached instanceof Response ? cached : this.#getFallback({ name, version, fallback })))
 									.catch(reject)
 									.finally(waiting.resolve);
 							});
@@ -173,7 +177,13 @@ export class HermesWorker extends EventTarget {
 						case 'network-only':
 							// This should never be reached, but listing to exhaust all options
 							waiting.resolve();
-							fetch(event.request).then(resolve, reject);
+							fetch(event.request).then(resp => {
+								if (resp.ok) {
+									resolve(resp);
+								} else {
+									resolve(this.#getFallback({ name, version, fallback }));
+								}
+							}, reject);
 							break;
 
 						case 'stale-while-revalidate':
@@ -256,7 +266,6 @@ export class HermesWorker extends EventTarget {
 		const { promise, resolve, reject } = Promise.withResolvers();
 		event.waitUntil(promise);
 
-
 		try {
 			const expectedCaches = new Set(
 				this.#routes
@@ -292,12 +301,29 @@ export class HermesWorker extends EventTarget {
 		} else {
 			return routes.map(({
 				name, version = 'v0.0.0', pattern, strategy = 'network-first', ignoreMethod = false,
-				ignoreSearch = false, ignoreVary = false, prefetch = [], fallback,
+				ignoreSearch = false, ignoreVary = false, prefetch = [], fallback, destination,
 			}) => ({
 				name, version, pattern: typeof pattern === 'string' ? this.#stringToPattern(pattern) : pattern,
-				strategy, ignoreMethod, ignoreSearch, ignoreVary, prefetch, fallback,
+				strategy, ignoreMethod, ignoreSearch, ignoreVary, prefetch, fallback, destination,
 			}));
 		}
+	}
+
+	/**
+	 *
+	 * @param {Request} request
+	 * @returns {RouteConfig}
+	 */
+	#matchRequest(request) {
+		return this.#routes.find(({ pattern, destination }) => (
+			typeof destination === 'undefined' || (
+				(typeof destination === 'string' && request.destination === destination)
+				|| (Array.isArray(destination) && destination.includes(request.destination))
+			)
+		) && (
+			typeof pattern?.test !== 'function'
+			|| pattern.test(request.url))
+		) ?? NULL_ROUTE;
 	}
 
 	#stringToPattern(str) {
@@ -329,6 +355,27 @@ export class HermesWorker extends EventTarget {
 			sw.caches.open(cacheName).then(resolve, reject);
 
 			return await promise;
+		}
+	}
+
+	/**
+	 *
+	 * @param {RouteConfig} config
+	 * @returns {Promise<Response>}
+	 */
+	async #getFallback({ name, version, fallback }) {
+		if (typeof fallback === 'string' || fallback instanceof URL) {
+			try {
+				const cache = await this.#openCache(name, version);
+				const cached = await cache.match(fallback);
+				return cached ?? Response.eerror();
+			} catch {
+				return Response.error();
+			}
+		} else if (fallback instanceof Response) {
+			return fallback;
+		} else {
+			return Response.error();
 		}
 	}
 }

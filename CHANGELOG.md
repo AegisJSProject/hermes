@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.1.0] - 2026-06-10
+
+### Added
+- Added support for handling requests by `destination`
+
+### Fixed
+- Correctly handle failed requests with fallback
+
 ## [v1.0.6] - 2026-04-24
 
 ### Added
